@@ -28,7 +28,7 @@ print(virus_train.head())
 data = usual_train.append(virus_train)
 data['文本'] = data['文本'].astype('str')
 # 打乱数据
-data = data.sample(frac=1, random_state=2020).reset_index(drop=True)
+data = data.reset_index(drop=True)
 print(data.shape)
 label_dict = {}
 for label in data['情绪标签'].unique():
@@ -37,15 +37,10 @@ print(label_dict)
 data['情绪标签'] = data['情绪标签'].map(label_dict)
 
 
-# 训练集、验证集划分
-# data = data.loc[0:100]
-# train_num = 30000
-# train = data.loc[0:train_num, :]
-# val = data.loc[train_num:, :]
-
 # 定义基本组件
 tokenizer = BertTokenizer.from_pretrained("ernie")
 config = BertConfig.from_json_file('ernie/config.json')
+bert_path = 'ernie'
 config.num_labels = len(label_dict)
 
 
@@ -63,12 +58,14 @@ class SentimentDataset(Dataset):
         result = []
         for index, item in enumerate(self.raw_sentence):
             vector = self._tokenizer.encode(item[0:self.max_len])
-            # 添加标志位区分普通数据和疫情数据
-            if self.type[index]=='usual':
-                vector.insert(1,1)
-            else:
-                vector.insert(1,2)
+            # # 添加标志位区分普通数据和疫情数据
+            # if self.type[index]=='usual':
+            #     vector.insert(1,1)
+            # else:
+            #     vector.insert(1,2)
             result.append(vector)
+            # print(item)
+            # print(self._tokenizer.decode(vector))
         return result
 
     def __len__(self):
@@ -86,12 +83,12 @@ def collate_fn(batch):
 
 
 class SentimentModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, bert_model):
         super().__init__()
         self.num_labels = config.num_labels
-        self.bert = BertModel(config)
+        self.bert = BertModel.from_pretrained(bert_model)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-
+        # self.lstm = nn.LSTM(768,config.hidden_size,1,batch_first=True)
         # self.classify = nn.Sequential(
         #     # nn.BatchNorm1d(config.hidden_size),
         #     nn.Dropout(p=0.5),
@@ -124,24 +121,20 @@ batch_size = 4
 lr = 3e-5
 weight_decay = 0
 adam_epsilon = 1e-8
-n_epochs = 3
+n_epochs = 2
 step = 1
 warmup = 0.05
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-kfold = KFold(n_splits=5, shuffle=False, random_state=2019)
+torch.cuda.set_device(0)
+kfold = KFold(n_splits=5, shuffle=True, random_state=2019)
 
 r = 0
 for train_index, test_index in kfold.split(np.zeros(len(data))):
     train = data.loc[train_index,:].reset_index()
     val = data.loc[test_index,:].reset_index()
 
-    train_set = SentimentDataset(train)
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    valid_set = SentimentDataset(val, valid=True)
-    valid_loader = DataLoader(valid_set, batch_size=batch_size,shuffle=False, collate_fn=collate_fn)
-
-    model = SentimentModel(config)
+    model = SentimentModel(config, bert_path)
     model.to(device)
 
     #  准确训练模型
@@ -160,24 +153,29 @@ for train_index, test_index in kfold.split(np.zeros(len(data))):
     for e in range(n_epochs):
         model.train()
         train_losses = []
+        train_set = SentimentDataset(train)
+
+        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+        valid_set = SentimentDataset(val, valid=True)
+        valid_loader = DataLoader(valid_set, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
         for i, (token, label) in tqdm(enumerate(train_loader)):
             input_mask = (token > 0).to(device)
             token, label = token.to(device), label.to(device)
             outputs = model(input_ids=token, attention_mask=input_mask)
             loss = loss_fn(outputs, label)
-            if (i + 1) % step == 0:
+            # if (i + 1) % step == 0:
                 # with amp.scale_loss(loss, optimizer) as scaled_loss:
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
-                scheduler.step()
-            else:
-                loss.backward()
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            scheduler.step()
+            # else:
+            #     loss.backward()
 
             train_losses.append(loss.item())
             mean_loss = np.mean(train_losses[-report_each:])
-            if i%1500==0:
+            if i % 1500 == 0:
                 print('loss: ', mean_loss)
             lr = get_learning_rate(optimizer)
         # validate
@@ -258,3 +256,4 @@ with open('virus_result.txt', 'w', encoding='utf-8') as f:
 # acc 0.705052, usual acc 0.691643, virus acc 0.748021
 # acc 0.703640, usual acc 0.697200, virus acc 0.724274
 # train loss　0.709274, val loss 0.839431
+# acc 0.701031, usual acc 0.692712, virus acc 0.727118
