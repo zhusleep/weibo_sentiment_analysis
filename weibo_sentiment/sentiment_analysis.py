@@ -7,12 +7,22 @@ from torch.nn.utils.rnn import pad_sequence
 import numpy as np
 from torch import nn
 import json
+import random
+import os
 from apex import amp
 from tqdm import tqdm as tqdm
 import torch
 from transformers import BertTokenizer, BertModel, BertConfig
 from sklearn.model_selection import KFold
 
+def seed_everything(seed=1234):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+seed_everything()
 
 usual_train = pd.read_excel('2020_SMP_raw_data/usual_train.xlsx')
 virus_train = pd.read_excel('2020_SMP_raw_data/virus_train.xlsx')
@@ -57,6 +67,10 @@ class SentimentDataset(Dataset):
     def sen_tokenize(self):
         result = []
         for index, item in enumerate(self.raw_sentence):
+            # if self.type[index] == 'virus':
+            #     item = '[疫情]'+item
+            # else:
+            #     item = '[普通]'+item
             vector = self._tokenizer.encode(item[0:self.max_len])
             # # 添加标志位区分普通数据和疫情数据
             # if self.type[index]=='usual':
@@ -190,9 +204,11 @@ for train_index, test_index in kfold.split(np.zeros(len(data))):
             loss = loss_fn(outputs,label)
             valid_losses += loss.item()
             pred_set.append(outputs.cpu().numpy())
-
+        # token = token.cpu()
         # valid_loss = valid_loss / len(dev_X)
         pred_set = np.concatenate(pred_set, axis=0)
+
+
         label_set = val['情绪标签']
         top_class = np.argmax(pred_set, axis=1)
         equals = top_class == label_set
@@ -201,6 +217,7 @@ for train_index, test_index in kfold.split(np.zeros(len(data))):
         virus_acc = np.mean(equals[val['type']=='virus'])
         print('acc %f, usual acc %f, virus acc %f' % (accuracy,usual_acc,virus_acc))
         print('epoch %d, train loss　%f, val loss %f' % (r, sum(train_losses)/len(train_loader), valid_losses/len(valid_loader)))
+
     torch.save(model.state_dict(), 'model/model_%d.pth' % r)
     r += 1
 
