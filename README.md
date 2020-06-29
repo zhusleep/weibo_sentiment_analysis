@@ -1,6 +1,7 @@
 # SMP2020微博情绪分类技术评测（SMP2020-EWECT）
 
 # Baseline 运行方法
+## 环境：python3,pytorch
 ```
 python3 sentiment_analysis.py
 ```
