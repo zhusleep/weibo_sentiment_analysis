@@ -1,4 +1,8 @@
 # SMP2020微博情绪分类技术评测（SMP2020-EWECT）
+
+# Baseline 运行方法
+```python3 sentiment_analysis.py
+```
 ## 欢迎
     欢迎来到SMP2020微博情绪分类技术评测（The Evaluation of Weibo Emotion Classification Technology，SMP2020-EWECT）。
 
